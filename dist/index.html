@@ -1,0 +1,32 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#075e54"><title>Texto pronto — Meu rascunho</title><link rel="stylesheet" href="assets/styles.css"><script defer src="assets/formatting.js"></script><script defer src="assets/history.js"></script><script defer src="assets/richtext.js"></script><script defer src="assets/app.js"></script></head>
+<body>
+<main class="chat" aria-labelledby="page-title">
+<header class="chat-header"><span class="avatar" aria-hidden="true">&#9998;</span><div><h1 id="page-title">Meu rascunho</h1><span id="save-status">Rascunho local</span></div><span class="app-name">texto pronto<span>.</span></span></header>
+<section class="composer" aria-label="Editor da mensagem">
+<div class="composer-tools"><span class="tools-title">Formatação</span><div class="history-tools"><button type="button" id="undo" title="Desfazer (Ctrl ou ⌘ + Z)" aria-label="Desfazer">&#8630;</button><button type="button" id="redo" title="Refazer (Ctrl ou ⌘ + Shift + Z)" aria-label="Refazer">&#8631;</button><button type="button" id="clear" class="clear-button">Limpar</button></div></div>
+<div class="toolbar" role="group" aria-label="Formatar texto selecionado">
+  <div class="toolbar-group" role="group" aria-label="Estilos de texto">
+    <button type="button" data-format="bold" class="format bold" title="Negrito (Ctrl ou ⌘ + B)" aria-label="Negrito"><span aria-hidden="true">B</span><small>Negrito</small></button>
+    <button type="button" data-format="italic" class="format italic" title="Itálico (Ctrl ou ⌘ + I)" aria-label="Itálico"><span aria-hidden="true">I</span><small>Itálico</small></button>
+    <button type="button" data-format="strike" class="format strike" title="Tachado (Ctrl ou ⌘ + Shift + X)" aria-label="Tachado"><span aria-hidden="true">S</span><small>Tachado</small></button>
+  </div>
+  <div class="toolbar-group" role="group" aria-label="Estilos de código">
+    <button type="button" data-format="code" class="format code" title="Monoespaçado" aria-label="Monoespaçado"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m9 9-3 3 3 3m6-6 3 3-3 3"/></svg><small>Monoespaçado</small></button>
+    <button type="button" data-format="inlineCode" class="format inlineCode" title="Código inline" aria-label="Código inline"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 8-4 4 4 4m10-8 4 4-4 4m-4-11-2 14"/></svg><small>Código inline</small></button>
+  </div>
+  <div class="toolbar-group" role="group" aria-label="Listas e citação">
+    <button type="button" data-format="list" class="format list" title="Lista com marcadores" aria-label="Lista com marcadores"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="4" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1" fill="currentColor" stroke="none"/><path d="M9 6h11M9 12h11M9 18h11"/></svg><small>Lista com marcadores</small></button>
+    <button type="button" data-format="numberedList" class="format numberedList" title="Lista numerada" aria-label="Lista numerada"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 4 1-1v6M3 9h2M3 14c0-2 3-2 3 0 0 1-3 3-3 5h3M10 6h11M10 12h11M10 18h11"/></svg><small>Lista numerada</small></button>
+    <button type="button" data-format="quote" class="format quote" title="Citação" aria-label="Citação"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 6h5v6H7c0 2-1 3-3 4l-1-2c1.5-.7 2-1.3 2-2V6Zm10 0h5v6h-3c0 2-1 3-3 4l-1-2c1.5-.7 2-1.3 2-2V6Z"/></svg><small>Citação</small></button>
+  </div>
+</div>
+<div class="input-wrap"><div id="message" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Mensagem" spellcheck="true" data-placeholder="Digite uma mensagem…" aria-describedby="editor-hint"></div></div>
+<div class="editor-meta"><span id="editor-hint">Selecione um trecho para formatar</span><span id="character-count">0 caracteres</span></div>
+<button type="button" id="copy" class="copy-button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></svg> Copiar mensagem</button>
+<p id="action-status" class="action-status" role="status" aria-live="polite" aria-atomic="true"></p>
+</section>
+<footer>Editor independente · Sem envio de mensagens</footer>
+</main><noscript><p>Ative o JavaScript para usar o editor local.</p></noscript>
+</body></html>

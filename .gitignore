@@ -1,0 +1,42 @@
+# Markdown
+*.[mM][dD]
+
+# Segredos e credenciais
+.env
+.env.*
+.aws/
+.ssh/
+secrets/
+credentials/
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa
+id_ed25519
+
+# Configuracoes locais
+.codex/
+.agents/
+.idea/
+.vscode/
+
+# Dependencias e caches
+node_modules/
+.cache/
+coverage/
+
+# Temporarios, backups e logs
+*~
+*.swp
+*.swo
+*.tmp
+*.bak
+*.log
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+Desktop.ini
