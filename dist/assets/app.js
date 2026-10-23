@@ -3,6 +3,8 @@
   const editor = document.getElementById('message');
   const $ = id => document.getElementById(id);
   const codec = MessageRichText;
+  const replies = MessageReplies;
+  let replyOptions = [];
   const key = 'texto-pronto.draft.v1';
   let initial = 'Oi! Vamos tirar aquela ideia do papel? 🌿\n\n*Nosso encontro está confirmado!*\n\n- Quinta-feira, às 15h\n- Um café e boas ideias\n\n_Leve sua criatividade. O resto a gente resolve junto._';
   let unavailable = false;
@@ -45,7 +47,7 @@
     try { localStorage.setItem(key, JSON.stringify({ text: value() })); $('save-status').textContent = 'Rascunho salvo'; $('save-status').classList.remove('error'); }
     catch (_) { $('save-status').textContent = 'Não foi possível salvar'; $('save-status').classList.add('error'); }
   }
-  function changed() { update(); $('save-status').textContent = 'Salvando…'; clearTimeout(timer); timer = setTimeout(save, 350); }
+  function changed() { update(); updateCampaign(); resetReplyMessages(); $('save-status').textContent = 'Salvando…'; clearTimeout(timer); timer = setTimeout(save, 350); }
   function record(merge = false) { history.push({ value: value(), ...position() }, merge); remember(); changed(); }
   function snapshot(item) { codec.render(editor, item.value); editor.focus({ preventScroll: true }); restore(item.start, item.end); lastInput = 0; changed(); }
   function format(action) {
@@ -128,6 +130,100 @@
     if (success) notify('Mensagem copiada com as marcações!');
     else { editor.focus(); const range = document.createRange(); range.selectNodeContents(editor); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); notify('Use Ctrl+C, ⌘+C ou Copiar no celular para copiar a seleção com marcações.'); }
   });
+  const campaigns = MessageCampaigns;
+  campaigns.templates.forEach(template => {
+    const option = document.createElement('option');
+    option.value = template.id; option.textContent = template.label;
+    $('campaign-template').append(option);
+  });
+  campaigns.contacts.forEach(contact => {
+    const label = document.createElement('label'), checkbox = document.createElement('input');
+    checkbox.type = 'checkbox'; checkbox.value = contact.id;
+    checkbox.disabled = !campaigns.canReceivePromotions(contact);
+    const status = contact.optOut ? 'Descadastrado' : contact.optIn ? 'Autorização fictícia registrada' : 'Sem autorização';
+    label.append(checkbox, document.createTextNode(contact.label + ' — ' + status));
+    $('campaign-contacts').append(label);
+  });
+  function selectedContacts() {
+    return Array.from($('campaign-contacts').querySelectorAll('input:checked'), input => input.value);
+  }
+  function updateCampaign() {
+    const selected = selectedContacts();
+    const count = selected.filter(id => campaigns.canReceivePromotions(campaigns.contacts.find(contact => contact.id === id))).length;
+    $('campaign-count').textContent = count + (count === 1 ? ' contato elegível selecionado' : ' contatos elegíveis selecionados');
+    $('simulate-campaign').disabled = !campaigns.simulate(codec.serialize(editor, true), selected).ok;
+    $('campaign-result').textContent = '';
+  }
+  $('use-template').addEventListener('click', () => {
+    const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
+    if (!template) return;
+    remember();
+    history.push({ value: template.text, start: 0, end: 0 });
+    snapshot(history.current());
+    notify('Exemplo não aprovado carregado. Use Desfazer para recuperar a mensagem anterior.');
+  });
+  $('campaign-contacts').addEventListener('change', updateCampaign);
+  $('simulate-campaign').addEventListener('click', () => {
+    const result = campaigns.simulate(codec.serialize(editor, true), selectedContacts());
+    $('campaign-result').textContent = result.ok
+      ? 'Simulação concluída para ' + result.recipientIds.length + ' contato(s) fictício(s). Nenhuma mensagem foi enviada.'
+      : result.error + ' Nenhuma mensagem foi enviada.';
+  });
+  function resetReplyMessages() {
+    $('reply-messages').replaceChildren();
+    $('reply-messages').hidden = true;
+    $('reply-status').textContent = '';
+    const empty = !codec.serialize(editor, true).trim();
+    $('reply-buttons').querySelectorAll('button').forEach(button => { button.disabled = empty; });
+  }
+  function renderReplyOptions() {
+    resetReplyMessages();
+    $('reply-buttons').replaceChildren();
+    $('reply-options').replaceChildren();
+    $('reply-buttons').hidden = !replyOptions.length;
+    replyOptions.forEach(option => {
+      const response = document.createElement('button');
+      response.type = 'button'; response.textContent = option.label;
+      response.disabled = !codec.serialize(editor, true).trim();
+      response.addEventListener('click', () => {
+        const choice = replies.chooseOption(replyOptions, option.id);
+        if (!choice || !codec.serialize(editor, true).trim()) return;
+        const bubble = document.createElement('div');
+        bubble.className = 'reply-bubble'; bubble.textContent = choice.label;
+        $('reply-messages').replaceChildren(bubble);
+        $('reply-messages').hidden = false;
+        $('reply-status').textContent = 'Resposta simulada: ' + choice.label + '. Nenhuma mensagem foi enviada.';
+      });
+      $('reply-buttons').append(response);
+      const row = document.createElement('div'), label = document.createElement('span'), remove = document.createElement('button');
+      label.textContent = option.label;
+      remove.type = 'button'; remove.textContent = 'Remover';
+      remove.setAttribute('aria-label', 'Remover opção ' + option.label);
+      remove.addEventListener('click', () => {
+        replyOptions = replies.removeOption(replyOptions, option.id);
+        renderReplyOptions();
+        $('reply-status').textContent = 'Opção removida.';
+        $('reply-label').focus();
+      });
+      row.append(label, remove); $('reply-options').append(row);
+    });
+    $('add-reply').disabled = replyOptions.length >= 3;
+  }
+  function addReplyOption() {
+    const result = replies.addOption(replyOptions, $('reply-label').value);
+    if (!result.ok) { $('reply-status').textContent = result.error; return; }
+    replyOptions = result.options;
+    $('reply-label').value = '';
+    renderReplyOptions();
+    $('reply-status').textContent = 'Opção adicionada. Toque no botão da mensagem para simular uma resposta.';
+    $('reply-label').focus();
+  }
+  $('add-reply').addEventListener('click', addReplyOption);
+  $('reply-label').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); addReplyOption(); }
+  });
+  renderReplyOptions();
+  updateCampaign();
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
   update(); $('save-status').textContent = unavailable ? 'Rascunho indisponível' : 'Rascunho local';
