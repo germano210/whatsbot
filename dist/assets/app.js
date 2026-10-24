@@ -167,7 +167,6 @@
       ? 'Armazenamento indisponível. O horário funciona somente nesta sessão; não foi possível recuperar ou salvar preferências.'
       : '';
   }
-  $('campaign-template').addEventListener('change', showTemplateTime);
   $('template-time').addEventListener('change', () => {
     const id = $('campaign-template').value, time = $('template-time').value;
     if (!campaigns.templates.some(template => template.id === id)) return;
@@ -202,7 +201,8 @@
     $('simulate-campaign').disabled = !campaigns.simulate(codec.serialize(editor, true), selected).ok;
     $('campaign-result').textContent = '';
   }
-  $('use-template').addEventListener('click', () => {
+  $('campaign-template').addEventListener('change', () => {
+    showTemplateTime();
     const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
     if (!template) return;
     remember();

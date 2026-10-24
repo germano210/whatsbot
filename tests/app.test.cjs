@@ -52,7 +52,7 @@ function mount(storage = new Map(), blocked = {}) {
   });
   return {
     elements, storage,
-    select(id) { elements['campaign-template'].value = id; },
+    select(id) { elements['campaign-template'].value = id; elements['campaign-template'].events.change(); },
     write(text) { elements.message.textContent = text; elements.message.events.input({ inputType: 'insertText' }); },
     click(id) { elements[id].events.click(); },
     text: () => elements.message.textContent,
@@ -68,11 +68,11 @@ test('inicializa na estrutura sem campanha e salva somente o modelo selecionado 
   app.select(second.id); app.write('_Outro modelo_'); app.click('copy');
   assert.deepEqual(JSON.parse(app.storage.get(templatesKey)), { [first.id]: '*Oferta*\n\nTexto 🌿', [second.id]: '_Outro modelo_' });
   const reloaded = mount(app.storage);
-  reloaded.select(first.id); reloaded.click('use-template');
+  reloaded.select(first.id);
   assert.equal(reloaded.text(), '*Oferta*\n\nTexto 🌿');
-  reloaded.select(second.id); reloaded.click('use-template');
+  reloaded.select(second.id);
   assert.equal(reloaded.text(), '_Outro modelo_');
-  reloaded.select(campaigns.templates[2].id); reloaded.click('use-template');
+  reloaded.select(campaigns.templates[2].id);
   assert.equal(reloaded.text(), campaigns.templates[2].text);
 });
 
@@ -82,7 +82,7 @@ test('salva mensagem vazia e recupera pelo modelo sem impedir desfazer', () => {
   assert.equal(app.elements.copy.disabled, false);
   app.click('copy');
   const reloaded = mount(app.storage);
-  reloaded.write('Mensagem anterior'); reloaded.click('use-template');
+  reloaded.write('Mensagem anterior'); reloaded.select(campaigns.templates[0].id);
   assert.equal(reloaded.text(), '');
   reloaded.click('undo');
   assert.equal(reloaded.text(), 'Mensagem anterior');
@@ -91,7 +91,7 @@ test('salva mensagem vazia e recupera pelo modelo sem impedir desfazer', () => {
 test('seleção inválida não altera modelos nem lança erro ao salvar ou carregar', () => {
   const app = mount();
   app.select('desconhecido'); app.write('Não salvar');
-  app.click('copy'); app.click('use-template');
+  app.click('copy');
   assert.equal(app.storage.has(templatesKey), false);
   assert.match(app.status(), /Selecione um modelo válido/);
 });
@@ -102,14 +102,14 @@ test('falha ao salvar informa uso apenas em sessão e mantém o modelo disponív
   assert.match(app.status(), /Não foi possível salvar/);
   assert.match(app.status(), /apenas nesta sessão/);
   assert.equal(app.storage.has(templatesKey), false);
-  app.write('Outro texto'); app.click('use-template');
+  app.write('Outro texto'); app.select(campaigns.templates[0].id);
   assert.equal(app.text(), 'Conteúdo da sessão');
 });
 
 test('ignora dados inválidos e informa falha real de leitura de modelos', () => {
   for (const stored of ['{', '[]', 'null', JSON.stringify({ [campaigns.templates[0].id]: 123, unknown: 'texto' })]) {
     const app = mount(new Map([[templatesKey, stored]]));
-    app.click('use-template');
+    app.select(campaigns.templates[0].id);
     assert.equal(app.text(), campaigns.templates[0].text);
   }
   assert.match(mount(new Map(), { read: true }).status(), /Não foi possível carregar os modelos/);
@@ -120,4 +120,44 @@ test('botão Salvar mensagem usa ícone de download sem ícone de cópia', () =>
   assert.match(button, /Salvar mensagem/);
   assert.match(button, /M12 3v12/);
   assert.doesNotMatch(button, /<rect/);
+  assert.doesNotMatch(html, /id="use-template"/);
+});
+
+test('startup preserva o rascunho sem carregar automaticamente o primeiro modelo', () => {
+  const app = mount(new Map([
+    ['texto-pronto.draft.v1', JSON.stringify({ text: 'Rascunho em andamento' })],
+    [templatesKey, JSON.stringify({ [campaigns.templates[0].id]: 'Modelo salvo diferente' })]
+  ]));
+  assert.equal(app.text(), 'Rascunho em andamento');
+  assert.equal(app.elements.undo.disabled, true);
+  app.select(campaigns.templates[1].id);
+  assert.equal(app.text(), campaigns.templates[1].text);
+  app.click('undo');
+  assert.equal(app.text(), 'Rascunho em andamento');
+});
+
+test('troca imediata atualiza texto e horário, mantém Desfazer e exige salvar explicitamente', () => {
+  const [first, second] = campaigns.templates;
+  const storedTexts = JSON.stringify({ [first.id]: 'Primeiro salvo', [second.id]: 'Segundo salvo' });
+  const app = mount(new Map([
+    [templatesKey, storedTexts],
+    ['texto-pronto.template-times.v1', JSON.stringify({ [first.id]: '09:30', [second.id]: '18:05' })]
+  ]));
+  app.select(first.id);
+  assert.equal(app.text(), 'Primeiro salvo');
+  assert.equal(app.elements['template-time'].value, '09:30');
+  app.write('Edição ainda não salva');
+  app.select(second.id);
+  assert.equal(app.text(), 'Segundo salvo');
+  assert.equal(app.elements['template-time'].value, '18:05');
+  assert.match(app.elements['template-time-status'].textContent, /Horário definido: 18:05/);
+  assert.equal(app.storage.get(templatesKey), storedTexts);
+  app.click('undo');
+  assert.equal(app.text(), 'Edição ainda não salva');
+  app.select(first.id);
+  assert.equal(app.text(), 'Primeiro salvo');
+  app.select(campaigns.templates[2].id);
+  assert.equal(app.text(), campaigns.templates[2].text);
+  assert.equal(app.elements['template-time'].value, '');
+  assert.equal(app.elements['template-time-status'].textContent, 'Template padrão de resposta');
 });
