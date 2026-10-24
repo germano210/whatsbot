@@ -12,7 +12,7 @@
   codec.render(editor, initial);
   const value = () => codec.serialize(editor);
   const history = MessageHistory.createHistory({ value: value(), start: 0, end: 0 });
-  let bookmark = null, timer, copying = false, lastInput = 0, lastType = '';
+  let bookmark = null, timer, lastInput = 0, lastType = '';
   function notify(text) { $('action-status').textContent = text; }
   function position() {
     const selection = window.getSelection();
@@ -40,7 +40,7 @@
     editor.dataset.empty = String(count === 0);
     $('character-count').textContent = count.toLocaleString('pt-BR') + (count === 1 ? ' caractere' : ' caracteres');
     $('undo').disabled = !history.canUndo(); $('redo').disabled = !history.canRedo();
-    $('copy').disabled = !count || copying; $('clear').disabled = !count;
+    $('copy').disabled = false; $('clear').disabled = !count;
   }
   function save() {
     clearTimeout(timer);
@@ -115,28 +115,75 @@
     if (action) { event.preventDefault(); format(action); }
     if (key === 'z' || (key === 'y' && !event.shiftKey)) { event.preventDefault(); snapshot(event.shiftKey || key === 'y' ? history.redo() : history.undo()); }
   });
-  function fallback(text) {
-    const helper = document.createElement('textarea'), focus = document.activeElement, p = position();
-    helper.value = text; helper.setAttribute('readonly', ''); helper.style.cssText = 'position:fixed;opacity:0;width:1px;height:1px;pointer-events:none'; document.body.append(helper);
-    let result = false;
-    try { helper.select(); result = document.execCommand('copy'); } catch (_) { /* Manual copying remains available. */ }
-    finally { helper.remove(); if (focus) focus.focus({ preventScroll: true }); restore(p.start, p.end); }
-    return result;
-  }
-  $('copy').addEventListener('click', async () => {
-    const text = value(); copying = true; update(); let success = false;
-    try { if (navigator.clipboard) { try { await navigator.clipboard.writeText(text); success = true; } catch (_) { success = fallback(text); } } else success = fallback(text); }
-    finally { copying = false; update(); }
-    if (success) notify('Mensagem copiada com as marcações!');
-    else { editor.focus(); const range = document.createRange(); range.selectNodeContents(editor); const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range); notify('Use Ctrl+C, ⌘+C ou Copiar no celular para copiar a seleção com marcações.'); }
-  });
   const campaigns = MessageCampaigns;
+  const templatesKey = 'texto-pronto.template-texts.v1';
+  const templateTexts = Object.create(null);
+  let templatesUnavailable = false;
+  try {
+    const savedTexts = JSON.parse(localStorage.getItem(templatesKey));
+    if (savedTexts && typeof savedTexts === 'object' && !Array.isArray(savedTexts)) {
+      Object.entries(savedTexts).forEach(([id, text]) => {
+        if (campaigns.templates.some(template => template.id === id) && typeof text === 'string') templateTexts[id] = text;
+      });
+    }
+  } catch (error) { templatesUnavailable = !(error instanceof SyntaxError); }
+  $('copy').addEventListener('click', () => {
+    const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
+    if (!template) { notify('Selecione um modelo válido para salvar a mensagem.'); return; }
+    templateTexts[template.id] = value();
+    try {
+      localStorage.setItem(templatesKey, JSON.stringify(templateTexts));
+      templatesUnavailable = false;
+      notify('Mensagem salva localmente no modelo “' + template.label + '”. Não houve envio nem aprovação pelo WhatsApp.');
+    } catch (_) {
+      templatesUnavailable = true;
+      notify('Não foi possível salvar no navegador. O texto do modelo “' + template.label + '” está disponível apenas nesta sessão.');
+    }
+  });
   campaigns.templates.forEach(template => {
     const option = document.createElement('option');
     option.value = template.id; option.textContent = template.label;
     $('campaign-template').append(option);
   });
+  const timesKey = 'texto-pronto.template-times.v1';
+  const templateTimes = Object.create(null);
+  const validTime = time => typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+  let timesUnavailable = false;
+  try {
+    const savedTimes = JSON.parse(localStorage.getItem(timesKey));
+    if (savedTimes && typeof savedTimes === 'object' && !Array.isArray(savedTimes)) {
+      Object.entries(savedTimes).forEach(([id, time]) => {
+        if (campaigns.templates.some(template => template.id === id) && validTime(time)) templateTimes[id] = time;
+      });
+    }
+  } catch (error) { timesUnavailable = !(error instanceof SyntaxError); }
+  function showTemplateTime() {
+    const time = templateTimes[$('campaign-template').value] || '';
+    $('template-time').value = time;
+    $('template-time-status').textContent = time
+      ? 'Horário definido: ' + time + ' (somente configuração local; nenhum envio automático)'
+      : 'Template padrão de resposta';
+    $('template-time-storage').textContent = timesUnavailable
+      ? 'Armazenamento indisponível. O horário funciona somente nesta sessão; não foi possível recuperar ou salvar preferências.'
+      : '';
+  }
+  $('campaign-template').addEventListener('change', showTemplateTime);
+  $('template-time').addEventListener('change', () => {
+    const id = $('campaign-template').value, time = $('template-time').value;
+    if (!campaigns.templates.some(template => template.id === id)) return;
+    if ($('template-time').validity.badInput || (time && !validTime(time))) {
+      $('template-time-status').textContent = 'Informe um horário válido no formato HH:MM.';
+      return;
+    }
+    if (time) templateTimes[id] = time;
+    else delete templateTimes[id];
+    try { localStorage.setItem(timesKey, JSON.stringify(templateTimes)); timesUnavailable = false; }
+    catch (_) { timesUnavailable = true; }
+    showTemplateTime();
+  });
+  showTemplateTime();
   campaigns.contacts.forEach(contact => {
+    if (!$('campaign-contacts')) return;
     const label = document.createElement('label'), checkbox = document.createElement('input');
     checkbox.type = 'checkbox'; checkbox.value = contact.id;
     checkbox.disabled = !campaigns.canReceivePromotions(contact);
@@ -145,9 +192,10 @@
     $('campaign-contacts').append(label);
   });
   function selectedContacts() {
-    return Array.from($('campaign-contacts').querySelectorAll('input:checked'), input => input.value);
+    return Array.from($('campaign-contacts')?.querySelectorAll('input:checked') || [], input => input.value);
   }
   function updateCampaign() {
+    if (!$('campaign-count') || !$('simulate-campaign') || !$('campaign-result')) return;
     const selected = selectedContacts();
     const count = selected.filter(id => campaigns.canReceivePromotions(campaigns.contacts.find(contact => contact.id === id))).length;
     $('campaign-count').textContent = count + (count === 1 ? ' contato elegível selecionado' : ' contatos elegíveis selecionados');
@@ -158,12 +206,14 @@
     const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
     if (!template) return;
     remember();
-    history.push({ value: template.text, start: 0, end: 0 });
+    const text = templateTexts[template.id] ?? template.text;
+    history.push({ value: text, start: 0, end: 0 });
     snapshot(history.current());
-    notify('Exemplo não aprovado carregado. Use Desfazer para recuperar a mensagem anterior.');
+    notify('Modelo local não aprovado carregado. Use Desfazer para recuperar a mensagem anterior.');
   });
-  $('campaign-contacts').addEventListener('change', updateCampaign);
-  $('simulate-campaign').addEventListener('click', () => {
+  $('campaign-contacts')?.addEventListener('change', updateCampaign);
+  $('simulate-campaign')?.addEventListener('click', () => {
+    if (!$('campaign-result')) return;
     const result = campaigns.simulate(codec.serialize(editor, true), selectedContacts());
     $('campaign-result').textContent = result.ok
       ? 'Simulação concluída para ' + result.recipientIds.length + ' contato(s) fictício(s). Nenhuma mensagem foi enviada.'
@@ -228,5 +278,6 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
   update(); $('save-status').textContent = unavailable ? 'Rascunho indisponível' : 'Rascunho local';
   if (unavailable) { $('save-status').classList.add('error'); notify('Não foi possível carregar o rascunho neste navegador.'); }
+  if (templatesUnavailable) notify('Não foi possível carregar os modelos salvos neste navegador. Alterações nos modelos podem ficar apenas nesta sessão.');
 })();
 
