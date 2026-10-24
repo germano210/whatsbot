@@ -117,27 +117,41 @@
   });
   const campaigns = MessageCampaigns;
   const templatesKey = 'texto-pronto.template-texts.v1';
-  const templateTexts = Object.create(null);
+  const savedTemplates = Object.create(null);
+  function validatedReplyOptions(options) {
+    if (!Array.isArray(options) || options.length > 3) return [];
+    let validated = [];
+    for (const option of options) {
+      const result = replies.addOption(validated, option && option.label);
+      if (!result.ok) return [];
+      validated = result.options;
+    }
+    return validated;
+  }
   let templatesUnavailable = false;
   try {
     const savedTexts = JSON.parse(localStorage.getItem(templatesKey));
     if (savedTexts && typeof savedTexts === 'object' && !Array.isArray(savedTexts)) {
-      Object.entries(savedTexts).forEach(([id, text]) => {
-        if (campaigns.templates.some(template => template.id === id) && typeof text === 'string') templateTexts[id] = text;
+      Object.entries(savedTexts).forEach(([id, saved]) => {
+        if (!campaigns.templates.some(template => template.id === id)) return;
+        if (typeof saved === 'string') savedTemplates[id] = { text: saved, options: [] };
+        else if (saved && typeof saved.text === 'string') {
+          savedTemplates[id] = { text: saved.text, options: validatedReplyOptions(saved.options) };
+        }
       });
     }
   } catch (error) { templatesUnavailable = !(error instanceof SyntaxError); }
   $('copy').addEventListener('click', () => {
     const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
     if (!template) { notify('Selecione um modelo válido para salvar a mensagem.'); return; }
-    templateTexts[template.id] = value();
+    savedTemplates[template.id] = { text: value(), options: replyOptions.map(option => ({ ...option })) };
     try {
-      localStorage.setItem(templatesKey, JSON.stringify(templateTexts));
+      localStorage.setItem(templatesKey, JSON.stringify(savedTemplates));
       templatesUnavailable = false;
-      notify('Mensagem salva localmente no modelo “' + template.label + '”. Não houve envio nem aprovação pelo WhatsApp.');
+      notify('Mensagem e opções salvas localmente no modelo “' + template.label + '”. Não houve envio nem aprovação pelo WhatsApp.');
     } catch (_) {
       templatesUnavailable = true;
-      notify('Não foi possível salvar no navegador. O texto do modelo “' + template.label + '” está disponível apenas nesta sessão.');
+      notify('Não foi possível salvar no navegador. O texto e as opções do modelo “' + template.label + '” estão disponíveis apenas nesta sessão.');
     }
   });
   campaigns.templates.forEach(template => {
@@ -204,11 +218,14 @@
   $('campaign-template').addEventListener('change', () => {
     showTemplateTime();
     const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
-    if (!template) return;
+    replyOptions = (savedTemplates[template?.id]?.options || []).map(option => ({ ...option }));
+    $('reply-label').value = '';
+    if (!template) { renderReplyOptions(); return; }
     remember();
-    const text = templateTexts[template.id] ?? template.text;
+    const text = savedTemplates[template.id]?.text ?? template.text;
     history.push({ value: text, start: 0, end: 0 });
     snapshot(history.current());
+    renderReplyOptions();
     notify('Modelo local não aprovado carregado. Use Desfazer para recuperar a mensagem anterior.');
   });
   $('campaign-contacts')?.addEventListener('change', updateCampaign);
@@ -265,7 +282,7 @@
     replyOptions = result.options;
     $('reply-label').value = '';
     renderReplyOptions();
-    $('reply-status').textContent = 'Opção adicionada. Toque no botão da mensagem para simular uma resposta.';
+    $('reply-status').textContent = 'Opção adicionada. Use Salvar mensagem para guardá-la neste modelo. Toque no botão da mensagem para simular uma resposta.';
     $('reply-label').focus();
   }
   $('add-reply').addEventListener('click', addReplyOption);
