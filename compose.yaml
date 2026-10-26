@@ -1,0 +1,20 @@
+services:
+  editor-whatsapp:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      APP_ADMIN_KEY: ${APP_ADMIN_KEY:?Defina APP_ADMIN_KEY}
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN:-}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+    volumes:
+      - editor-whatsapp-data:/app/server/data
+    restart: unless-stopped
+
+volumes:
+  editor-whatsapp-data:

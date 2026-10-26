@@ -11,11 +11,11 @@ const source = fs.readFileSync(path.join(__dirname, '../dist/assets/app.js'), 'u
 const html = fs.readFileSync(path.join(__dirname, '../dist/index.html'), 'utf8');
 const templatesKey = 'texto-pronto.template-texts.v1';
 
-function mount(storage = new Map(), blocked = {}) {
+function mount(storage = new Map(), blocked = {}, runtime = {}) {
   class Element {
     constructor(tag) {
       this.tag = tag; this.value = ''; this.textContent = ''; this.children = [];
-      this.dataset = {}; this.events = {}; this.validity = { badInput: false };
+      this.dataset = {}; this.events = {}; this.attributes = {}; this.validity = { badInput: false };
       this.classList = { add() {}, remove() {} };
     }
     addEventListener(type, handler) { this.events[type] = handler; }
@@ -28,8 +28,9 @@ function mount(storage = new Map(), blocked = {}) {
       return this.children.flatMap(child => [...(child.tag === selector ? [child] : []), ...(child.querySelectorAll ? child.querySelectorAll(selector) : [])]);
     }
     contains() { return false; }
-    focus() {}
-    setAttribute() {}
+    focus() { this.focused = true; }
+    setAttribute(name, value) { this.attributes[name] = value; }
+    getAttribute(name) { return this.attributes[name]; }
   }
   const elements = Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(match => [match[1], new Element(match[1] === 'campaign-template' ? 'select' : 'div')]));
   const selection = { rangeCount: 0, removeAllRanges() {}, addRange() {} };
@@ -42,21 +43,28 @@ function mount(storage = new Map(), blocked = {}) {
     createTreeWalker: () => ({ nextNode: () => null }),
     createRange() { return { setStart() {}, setEnd() {}, cloneRange() { return this; } }; }
   };
+  const requests = [];
   vm.runInNewContext(source, {
-    document, window: { getSelection: () => selection, addEventListener() {} },
+    document, window: {
+      getSelection: () => selection, addEventListener() {},
+      location: { protocol: runtime.protocol || 'http:', hostname: runtime.hostname || 'localhost' }
+    },
     NodeFilter: { SHOW_TEXT: 4 }, setTimeout: () => 1, clearTimeout() {},
     MessageHistory: history, MessageCampaigns: campaigns, MessageReplies: replies,
-    MessageRichText: { render(editor, text) { editor.textContent = text; }, serialize: editor => editor.textContent },
+    MessageRichText: runtime.codec || { render(editor, text) { editor.textContent = text; }, serialize: editor => editor.textContent },
+    fetch(url, options) { requests.push({ url, options }); return runtime.fetch ? runtime.fetch(url, options) : Promise.reject(Error('offline')); },
     localStorage: {
       getItem(key) { if (blocked.read && key === templatesKey) throw Error('blocked'); return storage.get(key) ?? null; },
       setItem(key, value) { if (blocked.write && key === templatesKey) throw Error('blocked'); storage.set(key, value); }
     }
   });
   return {
-    elements, storage,
+    elements, storage, requests,
     select(id) { elements['campaign-template'].value = id; elements['campaign-template'].events.change(); },
     write(text) { elements.message.textContent = text; elements.message.events.input({ inputType: 'insertText' }); },
-    click(id) { elements[id].events.click(); },
+    click(id) { return elements[id].events.click(); },
+    key(id, key) { elements[id].events.keydown({ key, preventDefault() {} }); },
+    admin(value) { elements['admin-key'].value = value; elements['admin-key'].events.input(); },
     addReply(label) { elements['reply-label'].value = label; elements['add-reply'].events.click(); },
     labels: () => elements['reply-buttons'].children.map(button => button.textContent),
     removeReply(index) { elements['reply-options'].children[index].children[1].events.click(); },
@@ -294,4 +302,143 @@ test('opções salvas preservam carregamento de texto, horário, Desfazer e form
   reloaded.select(second.id);
   assert.equal(reloaded.text(), 'Edição anterior');
   assert.deepEqual(reloaded.labels(), []);
+});
+
+test('abas e engrenagem preservam editor e permitem navegação por teclado', () => {
+  assert.match(html, /role="tablist"/);
+  assert.match(html, /id="tab-edit"[^>]*role="tab"/);
+  assert.match(html, /id="tab-settings"[^>]*role="tab"/);
+  const app = mount();
+  app.write('Rascunho em edição');
+  app.click('open-settings');
+  assert.equal(app.elements['edit-panel'].hidden, true);
+  assert.equal(app.elements['settings-panel'].hidden, false);
+  assert.equal(app.elements['tab-settings'].getAttribute('aria-selected'), 'true');
+  assert.equal(app.elements['tab-settings'].focused, true);
+  app.key('tab-settings', 'ArrowLeft');
+  assert.equal(app.elements['edit-panel'].hidden, false);
+  assert.equal(app.elements['settings-panel'].hidden, true);
+  assert.equal(app.elements['tab-edit'].getAttribute('aria-selected'), 'true');
+  assert.equal(app.text(), 'Rascunho em edição');
+  app.click('undo');
+  assert.notEqual(app.text(), 'Rascunho em edição');
+  assert.equal(app.requests.length, 0);
+});
+
+test('file:// e origem não local impedem qualquer chamada, mesmo com chave informada', async () => {
+  assert.match(html, /type="password" id="admin-key"/);
+  assert.doesNotMatch(html, /name="META_ACCESS_TOKEN"|id="meta-token"/);
+  for (const runtime of [{ protocol: 'file:', hostname: '' }, { protocol: 'https:', hostname: 'example.com' }]) {
+    const app = mount(new Map(), {}, runtime);
+    app.admin('chave-local');
+    assert.equal(app.elements['check-meta-status'].disabled, true);
+    assert.equal(app.elements['test-send'].disabled, true);
+    assert.equal(app.elements['activate-auto-reply'].disabled, true);
+    await app.click('check-meta-status');
+    await app.click('test-send');
+    await app.click('activate-auto-reply');
+    assert.equal(app.requests.length, 0);
+    assert.equal(app.storage.size, 0);
+  }
+});
+
+test('status e teste só chamam backend após clique, com chave em memória e número válido', async () => {
+  const app = mount(new Map(), {}, {
+    fetch(url) {
+      if (url === '/api/meta/status') return Promise.resolve({ ok: true, json: async () => ({ configured: true, mode: 'test', webhookConfigured: false, autoReplyConfigured: false }) });
+      return Promise.resolve({ ok: true, json: async () => ({ messageId: 'wamid.teste' }) });
+    }
+  });
+  app.admin('chave-local');
+  app.click('open-settings');
+  assert.equal(app.requests.length, 0);
+  assert.equal(app.elements['test-send'].disabled, true);
+  await app.click('check-meta-status');
+  assert.equal(app.requests[0].url, '/api/meta/status');
+  assert.equal(app.requests[0].options.headers['X-Admin-Key'], 'chave-local');
+  assert.match(app.elements['meta-status'].textContent, /Webhook não configurado/);
+  assert.equal(app.elements['test-send'].disabled, false);
+  app.elements['test-recipient'].value = '11 99999-9999';
+  await app.click('test-send');
+  assert.equal(app.requests.length, 1);
+  assert.match(app.elements['test-send-status'].textContent, /número internacional válido/);
+  app.elements['test-recipient'].value = '+5511999999999';
+  app.write('Texto livre que não pode ser enviado');
+  await app.click('test-send');
+  assert.equal(app.requests[1].url, '/api/meta/test-send');
+  assert.equal(app.requests[1].options.method, 'POST');
+  assert.equal(app.requests[1].options.headers['X-Admin-Key'], 'chave-local');
+  assert.deepEqual(JSON.parse(app.requests[1].options.body), { to: '5511999999999' });
+  assert.doesNotMatch(app.requests[1].options.body, /Texto livre/);
+  assert.match(app.elements['test-send-status'].textContent, /entrega ainda não foi confirmada/);
+  assert.equal(app.storage.size, 0);
+  app.admin('nova-chave');
+  assert.equal(app.elements['test-send'].disabled, true);
+});
+
+test('ativação preserva marcações e opções do modelo carregado', async () => {
+  const app = mount(new Map(), {}, {
+    codec: {
+      render(editor, text) { editor.textContent = text; },
+      serialize(editor, plain) { return plain ? editor.textContent.replace(/\*([^*]+)\*/g, '$1') : editor.textContent; }
+    },
+    fetch(url) {
+      if (url === '/api/meta/status') return Promise.resolve({ ok: true, json: async () => ({ configured: true, mode: 'test', webhookConfigured: true }) });
+      return Promise.resolve({ ok: true });
+    }
+  });
+  app.admin('chave-local');
+  await app.click('check-meta-status');
+  await app.click('activate-auto-reply');
+  assert.equal(app.requests.length, 1);
+  assert.match(app.elements['auto-reply-status'].textContent, /Selecione um modelo/);
+  app.select(campaigns.templates[0].id);
+  app.write('*Olá*, responda por aqui');
+  app.addReply('Sim');
+  app.addReply('Não');
+  await app.click('activate-auto-reply');
+  assert.equal(app.requests[1].url, '/api/meta/auto-reply');
+  assert.equal(app.requests[1].options.headers['X-Admin-Key'], 'chave-local');
+  assert.deepEqual(JSON.parse(app.requests[1].options.body), { text: '*Olá*, responda por aqui', buttons: ['Sim', 'Não'] });
+  assert.match(app.elements['auto-reply-status'].textContent, /somente mensagens recebidas/);
+  assert.equal(app.elements['deactivate-auto-reply'].disabled, false);
+  await app.click('deactivate-auto-reply');
+  assert.equal(app.requests[2].url, '/api/meta/auto-reply');
+  assert.equal(app.requests[2].options.method, 'DELETE');
+  assert.equal(app.requests[2].options.headers['X-Admin-Key'], 'chave-local');
+  assert.equal(app.elements['deactivate-auto-reply'].disabled, true);
+  assert.match(app.elements['auto-reply-status'].textContent, /desativada no servidor/);
+  assert.equal(app.storage.size, 0);
+});
+
+test('status indisponível e erros HTTP não habilitam ou simulam envio', async () => {
+  const off = mount(new Map(), {}, { fetch: async () => ({ ok: true, json: async () => ({ configured: false, mode: 'off', webhookConfigured: false }) }) });
+  off.admin('chave-local');
+  await off.click('check-meta-status');
+  assert.equal(off.elements['test-send'].disabled, true);
+  assert.equal(off.elements['activate-auto-reply'].disabled, true);
+  const failing = mount(new Map(), {}, { fetch: async () => ({ ok: false, status: 401 }) });
+  failing.admin('chave-errada');
+  await failing.click('check-meta-status');
+  assert.match(failing.elements['meta-status'].textContent, /HTTP 401/);
+  assert.equal(failing.elements['meta-status'].getAttribute('role'), 'alert');
+  assert.equal(failing.elements['test-send'].disabled, true);
+});
+
+test('falhas de envio e de ativação aparecem sem declarar entrega ou bot ativo', async () => {
+  const app = mount(new Map(), {}, {
+    fetch: async url => url === '/api/meta/status'
+      ? { ok: true, json: async () => ({ configured: true, mode: 'test', webhookConfigured: true }) }
+      : { ok: false, status: 503 }
+  });
+  app.admin('chave-local');
+  await app.click('check-meta-status');
+  app.elements['test-recipient'].value = '+5511999999999';
+  await app.click('test-send');
+  assert.match(app.elements['test-send-status'].textContent, /Falha.*HTTP 503/);
+  assert.equal(app.elements['test-send-status'].getAttribute('role'), 'alert');
+  app.select(campaigns.templates[0].id);
+  await app.click('activate-auto-reply');
+  assert.match(app.elements['auto-reply-status'].textContent, /Falha.*HTTP 503/);
+  assert.equal(app.elements['auto-reply-status'].getAttribute('role'), 'alert');
 });

@@ -17,12 +17,16 @@
 
 <body>
   <main class="chat" aria-labelledby="page-title">
-    <header class="chat-header"><span class="avatar" aria-hidden="true">&#9998;</span>
+    <header class="chat-header"><button type="button" id="open-settings" class="header-settings" aria-label="Abrir Configurações" title="Abrir Configurações"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2h4l.6 2.2 1.8.8 2-.9 2.8 2.8-.9 2 .8 1.8L23 11v4l-2.2.6-.8 1.8.9 2-2.8 2.8-2-.9-1.8.8L14 24h-4l-.6-2.2-1.8-.8-2 .9-2.8-2.8.9-2-.8-1.8L1 15v-4l2.2-.6.8-1.8-.9-2 2.8-2.8 2 .9 1.8-.8L10 2Z" transform="translate(0 -1) scale(1 .96)"/><circle cx="12" cy="12" r="3"/></svg></button>
       <div>
         <h1 id="page-title">Meu rascunho</h1><span id="save-status">Rascunho local</span>
       </div><span class="app-name">texto pronto<span>.</span></span>
     </header>
-    <section class="composer" aria-label="Editor da mensagem">
+    <nav class="app-tabs" role="tablist" aria-label="Áreas do Texto pronto">
+      <button type="button" id="tab-edit" role="tab" aria-selected="true" aria-controls="edit-panel" tabindex="0"><span aria-hidden="true" class="tab-icon">&#9998;</span>Edição</button>
+      <button type="button" id="tab-settings" role="tab" aria-selected="false" aria-controls="settings-panel" tabindex="-1"><span aria-hidden="true" class="tab-icon">&#9881;</span>Configurações</button>
+    </nav>
+    <section id="edit-panel" class="composer" role="tabpanel" aria-labelledby="tab-edit" tabindex="0">
       <div class="campaign-models">
         <label for="campaign-template">Modelos locais de mensagem</label>
         <div class="campaign-model-actions"><select id="campaign-template"
@@ -113,7 +117,33 @@
       <p id="action-status" class="action-status" role="status" aria-live="polite" aria-atomic="true"></p>
       <button type="button" id="copy" class="copy-button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg> Salvar mensagem</button>
     </section>
-    <footer>Editor independente · Sem envio de mensagens</footer>
+    <section id="settings-panel" class="settings-panel" role="tabpanel" aria-labelledby="tab-settings" tabindex="0" hidden>
+      <h2>Configurações</h2>
+      <p>A integração requer esta página servida por <code>localhost</code> e um servidor local configurado. O token da Meta fica somente no servidor, nunca no navegador.</p>
+      <div class="settings-card">
+        <h3>Teste de conexão e envio</h3>
+        <p>Consulte o servidor antes de enviar. O teste envia apenas o template oficial <code>hello_world</code> ao número informado — nunca o texto livre do editor. Nenhum envio acontece automaticamente.</p>
+        <p id="meta-availability" class="settings-note"></p>
+        <label for="admin-key">Chave local de administração</label>
+        <input type="password" id="admin-key" autocomplete="off" spellcheck="false" aria-describedby="admin-key-hint">
+        <p id="admin-key-hint" class="settings-note">Informe a chave <code>APP_ADMIN_KEY</code> do servidor local. Ela permanece somente nesta página enquanto aberta, não é salva. Não use aqui o token da Meta.</p>
+        <button type="button" id="check-meta-status" class="secondary-button" disabled>Verificar conexão</button>
+        <p id="meta-status" class="settings-feedback" role="status" aria-live="polite">Conexão não verificada.</p>
+        <label for="test-recipient">Número destinatário de teste</label>
+        <input type="tel" id="test-recipient" inputmode="tel" autocomplete="tel" placeholder="+5511999999999" aria-describedby="test-recipient-hint">
+        <p id="test-recipient-hint" class="settings-note">Use formato internacional: +, código do país e número, sem espaços ou pontuação. Não é salvo no navegador.</p>
+        <button type="button" id="test-send" class="test-send-button" disabled>Enviar teste <code>hello_world</code></button>
+        <p id="test-send-status" class="settings-feedback" role="status" aria-live="polite"></p>
+      </div>
+      <div class="settings-card">
+        <h3>Resposta automática</h3>
+        <p>Ao ativar, o servidor usará o texto atual com marcações do WhatsApp e as opções do modelo selecionado na aba Edição, inclusive alterações ainda não salvas localmente. O bot responderá somente a mensagens recebidas; esta ação não inicia conversas nem envia o rascunho agora.</p>
+        <button type="button" id="activate-auto-reply" class="secondary-button" disabled>Ativar resposta automática</button>
+        <button type="button" id="deactivate-auto-reply" class="secondary-button" disabled>Desativar resposta</button>
+        <p id="auto-reply-status" class="settings-feedback" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+    <footer>Edição local · Integrações exigem servidor</footer>
   </main><noscript>
     <p>Ative o JavaScript para usar o editor local.</p>
   </noscript>

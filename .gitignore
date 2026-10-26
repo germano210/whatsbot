@@ -27,6 +27,8 @@ id_ed25519
 node_modules/
 .cache/
 coverage/
+server/target/
+server/data/
 
 # Temporarios, backups e logs
 *~

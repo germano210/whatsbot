@@ -2,6 +2,29 @@
   'use strict';
   const editor = document.getElementById('message');
   const $ = id => document.getElementById(id);
+  const tabs = { edit: ['tab-edit', 'edit-panel'], settings: ['tab-settings', 'settings-panel'] };
+  function showTab(name, focus = false) {
+    Object.entries(tabs).forEach(([tabName, [tabId, panelId]]) => {
+      const active = tabName === name;
+      $(tabId).setAttribute('aria-selected', String(active));
+      $(tabId).tabIndex = active ? 0 : -1;
+      $(panelId).hidden = !active;
+    });
+    if (focus) $(tabs[name][0]).focus();
+  }
+  Object.entries(tabs).forEach(([name, [tabId]]) => {
+    $(tabId).addEventListener('click', () => showTab(name));
+    $(tabId).addEventListener('keydown', event => {
+      const order = Object.keys(tabs);
+      const index = order.indexOf(name);
+      const next = event.key === 'ArrowRight' ? order[(index + 1) % order.length]
+        : event.key === 'ArrowLeft' ? order[(index - 1 + order.length) % order.length]
+          : event.key === 'Home' ? order[0] : event.key === 'End' ? order.at(-1) : null;
+      if (next) { event.preventDefault(); showTab(next, true); }
+    });
+  });
+  $('open-settings').addEventListener('click', () => showTab('settings', true));
+  showTab('edit');
   const codec = MessageRichText;
   const replies = MessageReplies;
   let replyOptions = [];
@@ -118,6 +141,7 @@
   const campaigns = MessageCampaigns;
   const templatesKey = 'texto-pronto.template-texts.v1';
   const savedTemplates = Object.create(null);
+  let loadedTemplateId = null;
   function validatedReplyOptions(options) {
     if (!Array.isArray(options) || options.length > 3) return [];
     let validated = [];
@@ -218,6 +242,7 @@
   $('campaign-template').addEventListener('change', () => {
     showTemplateTime();
     const template = campaigns.templates.find(item => item.id === $('campaign-template').value);
+    loadedTemplateId = template?.id || null;
     replyOptions = (savedTemplates[template?.id]?.options || []).map(option => ({ ...option }));
     $('reply-label').value = '';
     if (!template) { renderReplyOptions(); return; }
@@ -291,6 +316,123 @@
   });
   renderReplyOptions();
   updateCampaign();
+  const localServer = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+    && ['http:', 'https:'].includes(window.location.protocol);
+  const adminKey = $('admin-key');
+  let metaConfigured = false, autoReplyConfigured = null, metaBusy = false;
+  $('meta-availability').textContent = window.location.protocol === 'file:'
+    ? 'Abra o editor pelo servidor em localhost. Em file:// a conexão e os envios ficam desativados.'
+    : localServer ? 'Conexão disponível somente após informar a chave local e verificar o servidor.'
+      : 'Abra o editor pelo servidor em localhost para usar a integração.';
+  function feedback(id, message, error = false) {
+    const element = $(id);
+    element.textContent = message;
+    element.classList[error ? 'add' : 'remove']('error');
+    element.setAttribute('role', error ? 'alert' : 'status');
+  }
+  function updateMetaControls() {
+    const authorized = localServer && !!adminKey.value.trim();
+    adminKey.disabled = metaBusy;
+    $('check-meta-status').disabled = !authorized || metaBusy;
+    $('test-send').disabled = !authorized || !metaConfigured || metaBusy;
+    $('activate-auto-reply').disabled = !authorized || !metaConfigured || metaBusy;
+    $('deactivate-auto-reply').disabled = !authorized || !metaConfigured || autoReplyConfigured === false || metaBusy;
+  }
+  adminKey.addEventListener('input', () => {
+    metaConfigured = false;
+    autoReplyConfigured = null;
+    feedback('meta-status', 'Chave alterada. Verifique novamente a conexão.');
+    updateMetaControls();
+  });
+  $('check-meta-status').addEventListener('click', async () => {
+    if (!localServer || !adminKey.value.trim() || metaBusy) return;
+    metaBusy = true;
+    metaConfigured = false;
+    updateMetaControls();
+    feedback('meta-status', 'Verificando servidor…');
+    try {
+      const response = await fetch('/api/meta/status', { headers: { 'X-Admin-Key': adminKey.value.trim() }, cache: 'no-store' });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const status = await response.json();
+      if (typeof status.configured !== 'boolean' || !['test', 'off'].includes(status.mode)
+        || typeof status.webhookConfigured !== 'boolean') throw new Error('Resposta inválida');
+      metaConfigured = status.configured && status.mode === 'test';
+      autoReplyConfigured = typeof status.autoReplyConfigured === 'boolean' ? status.autoReplyConfigured : null;
+      const connection = metaConfigured ? 'API configurada em modo de teste.' : 'API não disponível para teste.';
+      const webhook = status.webhookConfigured ? 'Webhook configurado.' : 'Webhook não configurado; o bot não receberá mensagens.';
+      const autoReply = autoReplyConfigured === null ? ''
+        : autoReplyConfigured ? 'Resposta automática configurada.' : 'Resposta automática não configurada.';
+      feedback('meta-status', [connection, webhook, autoReply].filter(Boolean).join(' '), !metaConfigured);
+    } catch (error) {
+      feedback('meta-status', 'Falha ao verificar conexão (' + (error.message.startsWith('HTTP ') ? error.message : 'servidor indisponível ou resposta inválida') + ').', true);
+    } finally { metaBusy = false; updateMetaControls(); }
+  });
+  $('test-send').addEventListener('click', async () => {
+    if (!localServer || !metaConfigured || !adminKey.value.trim() || metaBusy) return;
+    const recipient = $('test-recipient').value.trim();
+    if (!/^\+[1-9]\d{1,14}$/.test(recipient)) {
+      feedback('test-send-status', 'Informe um número internacional válido, como +5511999999999.', true);
+      return;
+    }
+    metaBusy = true;
+    updateMetaControls();
+    feedback('test-send-status', 'Solicitando envio do template hello_world…');
+    try {
+      const response = await fetch('/api/meta/test-send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey.value.trim() },
+        body: JSON.stringify({ to: recipient.slice(1) })
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const result = await response.json();
+      if (typeof result.messageId !== 'string' || !result.messageId) throw new Error('Resposta inválida');
+      feedback('test-send-status', 'Solicitação aceita (ID ' + result.messageId + '). A entrega ainda não foi confirmada.');
+    } catch (error) {
+      feedback('test-send-status', 'Falha no teste de envio (' + (error.message.startsWith('HTTP ') ? error.message : 'servidor indisponível ou resposta inválida') + ').', true);
+    } finally { metaBusy = false; updateMetaControls(); }
+  });
+  $('activate-auto-reply').addEventListener('click', async () => {
+    if (!localServer || !metaConfigured || !adminKey.value.trim() || metaBusy) return;
+    if (!loadedTemplateId || $('campaign-template').value !== loadedTemplateId) {
+      feedback('auto-reply-status', 'Selecione um modelo na aba Edição antes de ativar.', true);
+      return;
+    }
+    const text = value();
+    if (!text.trim()) {
+      feedback('auto-reply-status', 'O modelo selecionado precisa conter texto.', true);
+      return;
+    }
+    metaBusy = true;
+    updateMetaControls();
+    feedback('auto-reply-status', 'Ativando resposta automática no servidor…');
+    try {
+      const response = await fetch('/api/meta/auto-reply', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey.value.trim() },
+        body: JSON.stringify({ text, buttons: replyOptions.map(option => option.label) })
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      autoReplyConfigured = true;
+      feedback('auto-reply-status', 'Configuração aceita. O bot responderá somente mensagens recebidas quando o webhook estiver ativo.');
+    } catch (error) {
+      feedback('auto-reply-status', 'Falha ao ativar resposta automática (' + (error.message.startsWith('HTTP ') ? error.message : 'servidor indisponível') + ').', true);
+    } finally { metaBusy = false; updateMetaControls(); }
+  });
+  $('deactivate-auto-reply').addEventListener('click', async () => {
+    if (!localServer || !metaConfigured || autoReplyConfigured === false || !adminKey.value.trim() || metaBusy) return;
+    metaBusy = true;
+    updateMetaControls();
+    feedback('auto-reply-status', 'Desativando resposta automática no servidor…');
+    try {
+      const response = await fetch('/api/meta/auto-reply', {
+        method: 'DELETE', headers: { 'X-Admin-Key': adminKey.value.trim() }
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      autoReplyConfigured = false;
+      feedback('auto-reply-status', 'Resposta automática desativada no servidor.');
+    } catch (error) {
+      feedback('auto-reply-status', 'Falha ao desativar resposta automática (' + (error.message.startsWith('HTTP ') ? error.message : 'servidor indisponível') + ').', true);
+    } finally { metaBusy = false; updateMetaControls(); }
+  });
+  updateMetaControls();
   window.addEventListener('pagehide', save);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') save(); });
   update(); $('save-status').textContent = unavailable ? 'Rascunho indisponível' : 'Rascunho local';
