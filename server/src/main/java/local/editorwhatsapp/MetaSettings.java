@@ -7,10 +7,11 @@ import org.springframework.stereotype.Component;
 public class MetaSettings {
     private static final Pattern GRAPH_VERSION = Pattern.compile("v[0-9]+\\.[0-9]+");
     private static final Pattern PHONE_ID = Pattern.compile("[0-9]+");
+    private static final Pattern GRAPH_URL = Pattern.compile("https://graph\\.facebook\\.com/(v[0-9]+\\.[0-9]+)(?:[/?#].*)?");
 
     public String accessToken() { return value("META_ACCESS_TOKEN"); }
     public String phoneNumberId() { return value("META_PHONE_NUMBER_ID"); }
-    public String graphVersion() { return value("META_GRAPH_VERSION"); }
+    public String graphVersion() { return normalizeGraphVersion(value("META_GRAPH_VERSION")); }
     public String verifyToken() { return value("META_WEBHOOK_VERIFY_TOKEN"); }
     public String appSecret() { return value("META_APP_SECRET"); }
     public String adminKey() { return value("APP_ADMIN_KEY"); }
@@ -23,6 +24,13 @@ public class MetaSettings {
 
     public boolean webhookConfigured() {
         return !verifyToken().isBlank() && !appSecret().isBlank();
+    }
+
+    /** Aceita "vN.N" ou a URL oficial copiada do painel da Meta e devolve somente a versão. */
+    static String normalizeGraphVersion(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        java.util.regex.Matcher url = GRAPH_URL.matcher(value);
+        return url.matches() ? url.group(1) : value;
     }
 
     private String value(String name) {
