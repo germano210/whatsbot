@@ -28,7 +28,22 @@ public class MetaClient {
                 "template", Map.of("name", "hello_world", "language", Map.of("code", "en_US"))));
     }
 
+    public String sendTemplate(String to, String name, String language, List<String> bodyParameters) throws Exception {
+        Map<String, Object> template = new LinkedHashMap<>();
+        template.put("name", name);
+        template.put("language", Map.of("code", language));
+        if (!bodyParameters.isEmpty()) {
+            template.put("components", List.of(Map.of("type", "body", "parameters", bodyParameters.stream()
+                    .map(value -> Map.of("type", "text", "text", value)).toList())));
+        }
+        return send(Map.of("messaging_product", "whatsapp", "to", to, "type", "template", "template", template));
+    }
+
     public String sendReply(String to, AutoReplyStore.AutoReply reply) throws Exception {
+        return send(replyPayload(to, reply));
+    }
+
+    static Map<String, Object> replyPayload(String to, AutoReplyStore.AutoReply reply) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("messaging_product", "whatsapp");
         payload.put("to", to);
@@ -38,14 +53,32 @@ public class MetaClient {
         } else {
             payload.put("type", "interactive");
             payload.put("interactive", Map.of("type", "button", "body", Map.of("text", reply.text()),
-                    "action", Map.of("buttons", buttons(reply.buttons()))));
+                    "action", Map.of("buttons", buttons(reply))));
         }
-        return send(payload);
+        return payload;
     }
 
-    private List<Map<String, Object>> buttons(List<String> labels) {
-        return java.util.stream.IntStream.range(0, labels.size()).mapToObj(index -> Map.<String, Object>of(
-                "type", "reply", "reply", Map.of("id", "option-" + (index + 1), "title", labels.get(index))))
+    public String sendContinuation(String to, AutoReplyStore.AutoReply reply, AutoReplyStore.Continuation continuation) throws Exception {
+        return send(continuationPayload(to, reply, continuation));
+    }
+
+    static Map<String, Object> continuationPayload(String to, AutoReplyStore.AutoReply reply,
+                                                  AutoReplyStore.Continuation continuation) {
+        if (continuation.slots().isEmpty()) {
+            return replyPayload(to, new AutoReplyStore.AutoReply(continuation.text(), List.of()));
+        }
+        List<Map<String, String>> rows = java.util.stream.IntStream.range(0, continuation.slots().size())
+                .mapToObj(index -> Map.of("id", AutoReplyFlow.slotId(reply, continuation.buttonIndex(), index),
+                        "title", continuation.slots().get(index))).toList();
+        return Map.of("messaging_product", "whatsapp", "to", to, "type", "interactive",
+                "interactive", Map.of("type", "list", "body", Map.of("text", continuation.text()),
+                        "action", Map.of("button", "Ver horários", "sections", List.of(
+                                Map.of("title", "Horários disponíveis", "rows", rows)))));
+    }
+
+    private static List<Map<String, Object>> buttons(AutoReplyStore.AutoReply reply) {
+        return java.util.stream.IntStream.range(0, reply.buttons().size()).mapToObj(index -> Map.<String, Object>of(
+                "type", "reply", "reply", Map.of("id", AutoReplyFlow.buttonId(reply, index), "title", reply.buttons().get(index))))
                 .toList();
     }
 

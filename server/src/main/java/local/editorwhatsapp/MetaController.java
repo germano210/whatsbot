@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,13 +31,16 @@ public class MetaController {
     private final MetaClient client;
     private final AutoReplyStore replies;
     private final ObjectMapper mapper;
+    private final BotStateStore botState;
     private final Set<String> handledMessages = ConcurrentHashMap.newKeySet();
 
-    public MetaController(MetaSettings settings, MetaClient client, AutoReplyStore replies, ObjectMapper mapper) {
+    public MetaController(MetaSettings settings, MetaClient client, AutoReplyStore replies, ObjectMapper mapper,
+                          BotStateStore botState) {
         this.settings = settings;
         this.client = client;
         this.replies = replies;
         this.mapper = mapper;
+        this.botState = botState;
     }
 
     @GetMapping("/api/meta/status")
@@ -45,7 +49,27 @@ public class MetaController {
         return ResponseEntity.ok(Map.of("configured", settings.sendConfigured(),
                 "mode", settings.sendConfigured() ? "test" : "off",
                 "webhookConfigured", settings.webhookConfigured(),
-                "autoReplyConfigured", replies.current() != null));
+                "autoReplyConfigured", replies.current() != null,
+                "botActive", botState.active()));
+    }
+
+    @GetMapping("/api/meta/bot-state")
+    public ResponseEntity<?> botState(@RequestHeader(value = "X-Admin-Key", required = false) String key) {
+        if (!authorized(key)) return unauthorized();
+        return ResponseEntity.ok(Map.of("active", botState.active()));
+    }
+
+    @PutMapping("/api/meta/bot-state")
+    public ResponseEntity<?> setBotState(@RequestHeader(value = "X-Admin-Key", required = false) String key,
+                                         @RequestBody BotStateStore.State request) {
+        if (!authorized(key)) return unauthorized();
+        if (request == null || request.active() == null) return error(HttpStatus.BAD_REQUEST, "Informe o estado do bot.");
+        try {
+            botState.save(request.active());
+            return ResponseEntity.ok(Map.of("active", botState.active()));
+        } catch (java.io.IOException exception) {
+            return error(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível alterar o estado do bot.");
+        }
     }
 
     @PostMapping("/api/meta/test-send")
@@ -67,18 +91,11 @@ public class MetaController {
     public ResponseEntity<?> autoReply(@RequestHeader(value = "X-Admin-Key", required = false) String key,
                                        @RequestBody AutoReplyStore.AutoReply request) {
         if (!authorized(key)) return unauthorized();
-        if (request == null || request.text() == null || request.buttons() == null) {
-            return error(HttpStatus.BAD_REQUEST, "Texto e botões são obrigatórios.");
-        }
-        String message = request.text().trim();
-        List<String> buttons = request.buttons().stream().map(label -> label == null ? "" : label.trim()).toList();
-        if (message.isBlank() || message.length() > (buttons.isEmpty() ? 4096 : 1024)
-                || buttons.size() > 3 || buttons.stream().anyMatch(label -> label.isBlank() || label.length() > 20)) {
-            return error(HttpStatus.BAD_REQUEST, "Mensagem ou botões fora dos limites do WhatsApp.");
-        }
         try {
-            replies.save(new AutoReplyStore.AutoReply(message, buttons));
+            replies.save(AutoReplyFlow.normalize(request));
             return ResponseEntity.ok(Map.of("saved", true));
+        } catch (IllegalArgumentException exception) {
+            return error(HttpStatus.BAD_REQUEST, exception.getMessage());
         } catch (Exception exception) {
             return error(HttpStatus.INTERNAL_SERVER_ERROR, "Não foi possível salvar a resposta automática.");
         }
@@ -118,13 +135,15 @@ public class MetaController {
                     JsonNode value = change.path("value");
                     if (!settings.phoneNumberId().equals(value.path("metadata").path("phone_number_id").asText())) continue;
                     for (JsonNode message : value.path("messages")) {
-                        if (!"text".equals(message.path("type").asText())) continue;
+                        if (!botState.active()) continue;
+                        String type = message.path("type").asText();
+                        if (type.isBlank() || "system".equals(type)) continue;
                         AutoReplyStore.AutoReply reply = replies.current();
                         String id = message.path("id").asText();
                         String from = message.path("from").asText();
                         if (reply == null || id.isBlank() || !PHONE.matcher(from).matches() || !handledMessages.add(id)) continue;
                         try {
-                            client.sendReply(from, reply);
+                            sendAutoReply(from, message, reply);
                         } catch (Exception exception) {
                             handledMessages.remove(id);
                             return error(HttpStatus.BAD_GATEWAY, safeSendError(exception));
@@ -142,6 +161,26 @@ public class MetaController {
     private boolean authorized(String key) {
         return key != null && !settings.adminKey().isBlank() && MessageDigest.isEqual(
                 key.getBytes(StandardCharsets.UTF_8), settings.adminKey().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void sendAutoReply(String from, JsonNode message, AutoReplyStore.AutoReply reply) throws Exception {
+        JsonNode interactive = "interactive".equals(message.path("type").asText()) ? message.path("interactive") : mapper.nullNode();
+        String buttonId = "button_reply".equals(interactive.path("type").asText())
+                ? interactive.path("button_reply").path("id").asText() : "";
+        AutoReplyStore.Continuation continuation = AutoReplyFlow.continuation(reply, buttonId);
+        if (continuation != null) {
+            client.sendContinuation(from, reply, continuation);
+            return;
+        }
+        String rowId = "list_reply".equals(interactive.path("type").asText())
+                ? interactive.path("list_reply").path("id").asText() : "";
+        String selectedSlot = AutoReplyFlow.selectedSlot(reply, rowId);
+        if (selectedSlot != null) {
+            client.sendReply(from, new AutoReplyStore.AutoReply("Horário selecionado: " + selectedSlot
+                    + ". O agendamento ainda precisa ser confirmado.", List.of()));
+            return;
+        }
+        client.sendReply(from, reply);
     }
 
     private boolean validSignature(String signature, byte[] body) {

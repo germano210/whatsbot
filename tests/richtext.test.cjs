@@ -42,7 +42,10 @@ test('HTML tem um único campo editável e remove prévia duplicada', () => {
   const html = fs.readFileSync(require('node:path').join(__dirname, '../dist/index.html'), 'utf8');
   assert.equal((html.match(/contenteditable="true"/g) || []).length, 1);
   assert.match(html, /class="input-wrap"/);
-  assert.doesNotMatch(html, /message-bubble|id="preview"|<textarea/);
+  assert.doesNotMatch(html, /message-bubble|id="preview"/);
+  const textareas = [...html.matchAll(/<textarea\b[^>]*>/g)].map(match => match[0]);
+  assert.equal(textareas.length, 1);
+  assert.match(textareas[0], /id="schedule-recipients"/);
 });
 test('normaliza estilos adjacentes/duplicados e código ignora ênfase interna', () => {
   const editor = new Node('div');

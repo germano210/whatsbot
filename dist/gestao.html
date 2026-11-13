@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Agenda & atendimento · Brechó da Cami</title>
+  <link rel="stylesheet" href="assets/gestao.css">
+  <script src="assets/gestao-model.js" defer></script>
+  <script src="assets/gestao.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+  <div class="demo-banner"><span class="demo-dot" aria-hidden="true"></span><strong>Demonstração local · sem envios reais</strong><span class="banner-detail">Todos os contatos e conversas são fictícios.</span></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#hoje" aria-label="Brechó da Cami · início"><span class="brand-mark" aria-hidden="true">c<span>•</span></span><span>brechó da cami<small>AGENDA & ATENDIMENTO</small></span></a>
+      <p class="nav-caption">SEU ESPAÇO DE CUIDADO</p>
+      <nav id="navigation" class="navigation" aria-label="Navegação principal"></nav>
+      <div class="sidebar-bottom"><div class="sidebar-note"><span class="little-leaf" aria-hidden="true">✳</span><strong>Mais tempo para o que importa.</strong><p>Organize as visitas.<br>Cuide das conversas.</p></div><p class="sidebar-fine">Sem conexão com o WhatsApp.</p></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar"><div><span class="mobile-brand">brechó da cami</span><span class="topbar-title">Agenda & atendimento</span></div><div class="topbar-right"><span class="local-status"><span aria-hidden="true"></span>Somente neste navegador</span><span class="avatar avatar-owner" aria-label="Perfil ilustrativo Cami">C</span></div></header>
+      <div id="storage-warning" class="storage-warning" role="alert" hidden></div>
+      <main id="conteudo" tabindex="-1"><noscript><div class="panel">Ative o JavaScript para usar esta demonstração local. Nenhum servidor é necessário.</div></noscript></main>
+      <section id="editor-host" class="editor-host" aria-label="Editor de mensagens local" hidden>
+        <iframe id="message-editor" title="Texto pronto — editor de mensagens local" data-src="index.html?embedded=1"></iframe>
+      </section>
+      <footer class="page-footer">Feito para organizar, não para disparar. <span>Dados fictícios · Horário de São Paulo (America/Sao_Paulo)</span></footer>
+    </div>
+  </div>
+  <div id="feedback" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="modal" aria-labelledby="modal-title"><div class="modal-head"><h2 id="modal-title"></h2><button type="button" id="modal-close" class="icon-button" aria-label="Fechar janela">✕</button></div><div id="modal-body"></div></dialog>
+</body>
+</html>

@@ -14,6 +14,7 @@ public class MetaSettings {
     public String verifyToken() { return value("META_WEBHOOK_VERIFY_TOKEN"); }
     public String appSecret() { return value("META_APP_SECRET"); }
     public String adminKey() { return value("APP_ADMIN_KEY"); }
+    public String testRecipient() { return value("APP_TEST_RECIPIENT"); }
 
     public boolean sendConfigured() {
         return !accessToken().isBlank() && PHONE_ID.matcher(phoneNumberId()).matches()
